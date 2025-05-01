@@ -9,17 +9,18 @@ interface CartItem {
   price: number;
   quantity: number;
   image: string;
+  vendor: string;
   description?: string;
   category?: string;
-  vendor: string;
 }
 
 interface CartContextType {
   items: CartItem[];
-  addItem: (item: CartItem) => void;
+  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   getTotal: () => number;
+  getTotalItems: () => number;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -36,14 +37,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const addItem = (newItem: CartItem) => {
+  const addItem = (newItem: Omit<CartItem, 'quantity'> & { quantity?: number }) => {
     setItems(prev => {
       const existingItem = prev.find(item => item.id === newItem.id);
+      const quantity = newItem.quantity || 1;
       
       if (existingItem) {
+        // Check if same vendor
+        if (existingItem.vendor !== newItem.vendor) {
+          toast.error('Items must be from the same vendor');
+          return prev;
+        }
+        
         const updated = prev.map(item => 
           item.id === newItem.id 
-            ? { ...item, quantity: item.quantity + newItem.quantity }
+            ? { ...item, quantity: item.quantity + quantity }
             : item
         );
         localStorage.setItem('cart', JSON.stringify(updated));
@@ -51,7 +59,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return updated;
       }
       
-      const updated = [...prev, newItem];
+      // Check if mixing vendors
+      if (prev.length > 0 && prev[0].vendor !== newItem.vendor) {
+        toast.error('Cannot mix items from different vendors');
+        return prev;
+      }
+      
+      const updated = [...prev, { ...newItem, quantity }];
       localStorage.setItem('cart', JSON.stringify(updated));
       toast.success('Added to cart');
       return updated;
@@ -78,10 +92,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const getTotal = () => items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
+  const getTotalItems = () => items.reduce((sum, item) => sum + item.quantity, 0);
+
   if (!mounted) return null;
 
   return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQuantity, getTotal }}>
+    <CartContext.Provider value={{ items, addItem, removeItem, updateQuantity, getTotal, getTotalItems }}>
       {children}
     </CartContext.Provider>
   );
